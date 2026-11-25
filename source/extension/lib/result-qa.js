@@ -436,6 +436,25 @@ export async function answerRunQuestion({
   let plan = rulePlan;
   let mode = 'fallback';
   let degraded = false;
+  let totalLatencyMs = 0;
+  let totalPrompt = 0;
+  let totalCompletion = 0;
+  let lastModel = null;
+  let lastUsage = null;
+  let retried = false;
+  let degradedReason = null;
+
+  const accumulateMeta = (aiRes) => {
+    if (!aiRes) return;
+    totalLatencyMs += Number(aiRes.latencyMs || 0);
+    if (aiRes.model) lastModel = aiRes.model;
+    if (aiRes.retried) retried = true;
+    if (aiRes.usage && typeof aiRes.usage === 'object') {
+      totalPrompt += Number(aiRes.usage.prompt_tokens || 0);
+      totalCompletion += Number(aiRes.usage.completion_tokens || 0);
+      lastUsage = { prompt_tokens: totalPrompt, completion_tokens: totalCompletion };
+    }
+  };
 
   if (aiClient?.planQuery) {
     const aiPlanRes = await aiClient.planQuery({
@@ -443,6 +462,7 @@ export async function answerRunQuestion({
       recordSchema: schema,
       allowedOps: ALLOWED_QUERY_OPS
     });
+    accumulateMeta(aiPlanRes);
     if (aiPlanRes?.ok && aiPlanRes.data) {
       if (aiPlanRes.data.op === null && aiPlanRes.data.cannotComputeReason) {
         return {
@@ -453,13 +473,22 @@ export async function answerRunQuestion({
           answer: aiPlanRes.data.cannotComputeReason,
           evidenceRefs: [`records:1..${records.length}`],
           caveats: [aiPlanRes.data.cannotComputeReason],
-          computedEvidence: null
+          computedEvidence: null,
+          meta: {
+            mode: aiPlanRes.mode || 'remote',
+            model: lastModel,
+            latencyMs: totalLatencyMs,
+            usage: lastUsage,
+            retried,
+            degradedReason: null
+          }
         };
       }
       plan = aiPlanRes.data;
       mode = aiPlanRes.mode || 'remote';
     } else {
       degraded = true;
+      degradedReason = aiPlanRes?.message || aiPlanRes?.errorCode || 'planQuery 失败已降级';
     }
   }
 
@@ -473,7 +502,15 @@ export async function answerRunQuestion({
       answer: primaryExec.reason,
       evidenceRefs: [`records:1..${records.length}`],
       caveats: [primaryExec.reason],
-      computedEvidence: null
+      computedEvidence: null,
+      meta: {
+        mode,
+        model: lastModel,
+        latencyMs: totalLatencyMs,
+        usage: lastUsage,
+        retried,
+        degradedReason
+      }
     };
   }
 
@@ -552,6 +589,7 @@ export async function answerRunQuestion({
   // 离线 Mock 或无远端模型时，使用确定性格式化保证数字 100% 精准；远程模式由 explainRun 组织自然语言
   if (mode === 'remote' && aiClient?.explainRun) {
     const expRes = await aiClient.explainRun({ question: q, computedEvidence });
+    accumulateMeta(expRes);
     if (expRes?.ok && expRes.data) {
       return {
         ok: true,
@@ -564,10 +602,19 @@ export async function answerRunQuestion({
         evidenceRefs: Array.from(
           new Set([...computedEvidence.evidenceRefs, ...(expRes.data.evidenceRefs || [])])
         ),
-        caveats: [...caveats, ...(expRes.data.caveats || [])]
+        caveats: [...caveats, ...(expRes.data.caveats || [])],
+        meta: {
+          mode: expRes.mode || 'remote',
+          model: lastModel,
+          latencyMs: totalLatencyMs,
+          usage: lastUsage,
+          retried,
+          degradedReason
+        }
       };
     }
     degraded = true;
+    degradedReason = expRes?.message || expRes?.errorCode || degradedReason || 'explainRun 失败已降级';
   }
 
   return {
@@ -579,6 +626,14 @@ export async function answerRunQuestion({
     computedEvidence,
     answer: formatDeterministicExplanation(q, computedEvidence),
     evidenceRefs: computedEvidence.evidenceRefs,
-    caveats
+    caveats,
+    meta: {
+      mode,
+      model: lastModel,
+      latencyMs: totalLatencyMs,
+      usage: lastUsage,
+      retried,
+      degradedReason
+    }
   };
 }

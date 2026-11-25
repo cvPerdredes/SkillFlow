@@ -16,7 +16,7 @@
 <main>
   <section>
     <div class="row between">
-      <h2>00 · 模型适配（内网 ≤284B / 离线 Mock）</h2>
+      <h2>00 · 模型适配（多提供商远程 / 离线 Mock）</h2>
       <span id="aiModeTag" class="status">Mock 离线</span>
     </div>
     <details id="aiConfigBox">
@@ -24,25 +24,53 @@
       <label>运行模式
         <select id="aiMode">
           <option value="mock">离线 Mock 演示模式（零网络依赖）</option>
-          <option value="remote">OpenAI-Compatible 内网接口（≤284B）</option>
+          <option value="remote">OpenAI-Compatible 远程大模型</option>
         </select>
       </label>
       <div id="remoteAiFields" hidden>
-        <label>接口 Base URL（保存时将校验协议并按需申请主机权限）
-          <input id="aiBaseUrl" placeholder="例如 http://127.0.0.1:8000/v1" autocomplete="off">
+        <label>模型提供商
+          <select id="aiProvider">
+            <option value="siliconflow">SiliconFlow（硅基流动）</option>
+            <option value="deepseek">DeepSeek 官方</option>
+            <option value="intranet_openai">国网内网 / 本地 OpenAI 网关</option>
+            <option value="custom">自定义 OpenAI-Compatible 网关</option>
+          </select>
         </label>
-        <label>模型名称
-          <input id="aiModel" value="deepseek-v4-flash" autocomplete="off">
+        <label>接口 Base URL（保存/探测时按需申请主机权限）
+          <input id="aiBaseUrl" placeholder="https://api.siliconflow.cn/v1" autocomplete="off">
         </label>
-        <label>API Key（仅存 chrome.storage.session，关闭浏览器即毁）
-          <input id="aiApiKey" type="password" placeholder="可选，不落本地持久化存储" autocomplete="off">
+        <label>模型名称 Model ID（支持手输或下拉点选）
+          <input id="aiModel" list="aiModelSuggestions" value="deepseek-v4-flash-0731" placeholder="deepseek-v4-flash-0731" autocomplete="off">
+          <datalist id="aiModelSuggestions"></datalist>
         </label>
+        <div class="form-two">
+          <label>超时 (秒, 5–60)
+            <input id="aiTimeoutSec" type="number" min="5" max="60" value="30">
+          </label>
+          <label>思考模式
+            <select id="aiThinkingMode">
+              <option value="auto">自动 (默认)</option>
+              <option value="off">关闭思考加速 JSON</option>
+            </select>
+          </label>
+        </div>
+        <div class="row between key-label-row">
+          <label style="margin:0;">API Key（仅存 session，关闭浏览器即毁）</label>
+          <span id="aiKeyStatusBadge" class="key-status-pill">会话 Key：未配置</span>
+        </div>
+        <input id="aiApiKey" type="password" placeholder="输入新 Key 覆盖（已配置则留空沿用）" autocomplete="off">
+        <div class="row action-row">
+          <button type="button" id="testAiConnBtn" class="btn-secondary">测试连通性</button>
+          <button type="button" id="fetchAiModelsBtn" class="btn-secondary">拉取模型列表</button>
+        </div>
+        <div id="aiProbeResult" class="probe-box" hidden></div>
       </div>
       <div class="row action-row">
         <button type="button" id="saveAiConfig">保存模型设置</button>
         <button type="button" id="clearAiKey" class="btn-secondary">清空会话 Key</button>
       </div>
     </details>
+    <div id="aiTelemetryBar" class="ai-telemetry-bar">AI 遥测：尚未调用（累计 0 次 · 重试 0 · 降级 0）</div>
   </section>
 
   <section>

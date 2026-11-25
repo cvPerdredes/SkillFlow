@@ -155,11 +155,22 @@ export async function matchSkillByQuery({ userQuery, skills = [], aiClient = nul
 
   const res = await aiClient.matchSkill({ userQuery, skills: compactSkills });
   if (res.ok) {
-    return { ok: true, mode: res.mode, degraded: false, usage: res.usage || null, ...res.data };
+    return {
+      ok: true,
+      mode: res.mode,
+      model: res.model || null,
+      latencyMs: res.latencyMs ?? 0,
+      retried: Boolean(res.retried),
+      degraded: false,
+      usage: res.usage || null,
+      ...res.data
+    };
   }
   return {
     ok: true,
     mode: 'fallback',
+    model: res.model || null,
+    latencyMs: res.latencyMs ?? 0,
     degraded: true,
     errorCode: res.errorCode,
     errorMessage: res.message,
@@ -308,15 +319,24 @@ export async function extractArgsFromInput({
     ? currentDate
     : new Date().toISOString().slice(0, 10);
 
+  const cleanCollected = {};
+  for (const [k, v] of Object.entries(collectedArgs || {})) {
+    if (v !== undefined && v !== null && String(v).trim() !== '') {
+      cleanCollected[k] = v;
+    }
+  }
+
   if (!aiClient) {
     return {
       ok: true,
       mode: 'fallback',
+      model: null,
+      latencyMs: 0,
       degraded: true,
       ...fallbackExtractArgs({
         userText,
         parameters,
-        collectedArgs,
+        collectedArgs: cleanCollected,
         lastQuestion,
         currentDate: dateStr
       })
@@ -326,13 +346,18 @@ export async function extractArgsFromInput({
   const res = await aiClient.extractArgs({
     userText,
     parameters,
-    collectedArgs,
+    collectedArgs: cleanCollected,
     lastQuestion,
     currentDate: dateStr
   });
 
   if (res.ok) {
-    const mergedArgs = { ...(collectedArgs || {}), ...(res.data.providedArgs || {}) };
+    const mergedArgs = { ...cleanCollected };
+    for (const [k, v] of Object.entries(res.data?.providedArgs || {})) {
+      if (v !== undefined && v !== null && String(v).trim() !== '') {
+        mergedArgs[k] = v;
+      }
+    }
     const invalidArgs = [...(res.data.invalidArgs || [])];
     // 再用规则校验补强，防止模型对非法格式（如 2026-13）漏检
     const localCheck = fallbackExtractArgs({
@@ -346,21 +371,33 @@ export async function extractArgsFromInput({
       if (!invalidArgs.some((x) => x.key === inv.key)) invalidArgs.push(inv);
     }
     const missingRequired = (parameters || [])
-      .filter((p) => p.required !== false && p.type !== 'dataset' && !(p.key in mergedArgs))
+      .filter(
+        (p) =>
+          p.required !== false &&
+          p.type !== 'dataset' &&
+          String(mergedArgs[p.key] ?? '').trim() === ''
+      )
       .map((p) => p.key);
+
+    const nextQuestion =
+      invalidArgs.length > 0
+        ? invalidArgs.map((e) => e.message).join('；')
+        : missingRequired.length > 0
+          ? res.data.nextQuestion || localCheck.nextQuestion
+          : null;
 
     return {
       ok: true,
       mode: res.mode,
+      model: res.model || null,
+      latencyMs: res.latencyMs ?? 0,
+      retried: Boolean(res.retried),
       degraded: false,
       usage: res.usage || null,
       providedArgs: mergedArgs,
       invalidArgs,
       missingRequired,
-      nextQuestion:
-        invalidArgs.length > 0
-          ? invalidArgs.map((e) => e.message).join('；')
-          : res.data.nextQuestion || localCheck.nextQuestion,
+      nextQuestion,
       ambiguities: res.data.ambiguities || []
     };
   }
@@ -368,13 +405,15 @@ export async function extractArgsFromInput({
   return {
     ok: true,
     mode: 'fallback',
+    model: res.model || null,
+    latencyMs: res.latencyMs ?? 0,
     degraded: true,
     errorCode: res.errorCode,
     errorMessage: res.message,
     ...fallbackExtractArgs({
       userText,
       parameters,
-      collectedArgs,
+      collectedArgs: cleanCollected,
       lastQuestion,
       currentDate: dateStr
     })

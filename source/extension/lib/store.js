@@ -19,12 +19,116 @@ const MAX_SKILLS = 50;
 const MAX_RUNS = 100;
 const MAX_CHECKPOINTS = 20;
 
-const DEFAULT_AI_CONFIG = Object.freeze({
-  mode: 'mock',
-  baseUrl: '',
-  model: 'deepseek-v4-flash',
-  timeoutMs: 15000
+export const AI_PROVIDER_PRESETS = Object.freeze({
+  siliconflow: Object.freeze({
+    id: 'siliconflow',
+    label: 'SiliconFlow（硅基流动）',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    defaultModel: 'deepseek-v4-flash-0731',
+    suggestedModels: Object.freeze([
+      'deepseek-v4-flash-0731',
+      'deepseek-ai/DeepSeek-V3',
+      'deepseek-ai/DeepSeek-R1',
+      'Pro/deepseek-ai/DeepSeek-V3',
+      'Qwen/Qwen2.5-72B-Instruct'
+    ])
+  }),
+  deepseek: Object.freeze({
+    id: 'deepseek',
+    label: 'DeepSeek 官方',
+    baseUrl: 'https://api.deepseek.com/v1',
+    defaultModel: 'deepseek-chat',
+    suggestedModels: Object.freeze(['deepseek-chat', 'deepseek-reasoner'])
+  }),
+  intranet_openai: Object.freeze({
+    id: 'intranet_openai',
+    label: '国网内网 / 本地 OpenAI 网关',
+    baseUrl: 'http://127.0.0.1:8000/v1',
+    defaultModel: 'deepseek-v4-flash',
+    suggestedModels: Object.freeze([
+      'deepseek-v4-flash',
+      'Qwen2.5-72B-Instruct',
+      'DeepSeek-R1-Distill-Qwen-32B'
+    ])
+  }),
+  custom: Object.freeze({
+    id: 'custom',
+    label: '自定义 OpenAI-Compatible 网关',
+    baseUrl: '',
+    defaultModel: 'deepseek-v4-flash-0731',
+    suggestedModels: Object.freeze(['deepseek-v4-flash-0731'])
+  })
 });
+
+export const DEFAULT_AI_CONFIG = Object.freeze({
+  mode: 'mock',
+  provider: 'siliconflow',
+  baseUrl: 'https://api.siliconflow.cn/v1',
+  model: 'deepseek-v4-flash-0731',
+  timeoutMs: 30000,
+  temperature: 0.1,
+  maxTokens: 2048,
+  thinkingMode: 'auto'
+});
+
+function normalizeAiConfig(raw, { strictRemote = false } = {}) {
+  const mode = raw?.mode === 'remote' ? 'remote' : 'mock';
+  const rawProvider = String(raw?.provider || '').trim();
+  const provider = Object.prototype.hasOwnProperty.call(AI_PROVIDER_PRESETS, rawProvider)
+    ? rawProvider
+    : DEFAULT_AI_CONFIG.provider;
+  const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS.siliconflow;
+
+  let baseUrl =
+    raw?.baseUrl === undefined
+      ? provider !== 'custom'
+        ? preset.baseUrl
+        : ''
+      : String(raw.baseUrl || '').trim();
+
+  if (!baseUrl && mode === 'mock' && provider === 'siliconflow') {
+    baseUrl = preset.baseUrl;
+  }
+
+  if (strictRemote && mode === 'remote') {
+    const checked = validateRemoteAiBaseUrl(baseUrl);
+    if (!checked.ok) {
+      throw new Error(checked.message);
+    }
+    baseUrl = checked.normalizedUrl;
+  }
+
+  const rawModel = String(raw?.model || '').trim();
+  const model = rawModel || preset.defaultModel || DEFAULT_AI_CONFIG.model;
+
+  const rawTimeout = Number(raw?.timeoutMs);
+  const timeoutMs = Number.isFinite(rawTimeout)
+    ? Math.min(Math.max(Math.round(rawTimeout), 5000), 60000)
+    : DEFAULT_AI_CONFIG.timeoutMs;
+
+  const rawTemp = Number(raw?.temperature);
+  const temperature = Number.isFinite(rawTemp)
+    ? Number(Math.min(Math.max(rawTemp, 0), 1).toFixed(2))
+    : DEFAULT_AI_CONFIG.temperature;
+
+  const rawMax = Number(raw?.maxTokens);
+  const maxTokens = Number.isFinite(rawMax)
+    ? Math.min(Math.max(Math.round(rawMax), 256), 4096)
+    : DEFAULT_AI_CONFIG.maxTokens;
+
+  const thinkingMode = raw?.thinkingMode === 'off' ? 'off' : 'auto';
+
+  return {
+    mode,
+    provider,
+    baseUrl,
+    model,
+    timeoutMs,
+    temperature,
+    maxTokens,
+    thinkingMode
+  };
+}
 
 /**
  * 校验远程 OpenAI-Compatible 模型网关地址是否合法 http/https URL。
@@ -136,31 +240,12 @@ export function createStore(chromeApi = globalThis.chrome) {
     const data = await localGet(AI_CONFIG_KEY);
     const saved = data[AI_CONFIG_KEY];
     if (!saved || typeof saved !== 'object') return { ...DEFAULT_AI_CONFIG };
-    return {
-      mode: saved.mode === 'remote' ? 'remote' : 'mock',
-      baseUrl: String(saved.baseUrl || '').trim(),
-      model: String(saved.model || DEFAULT_AI_CONFIG.model).trim(),
-      timeoutMs: Math.min(Math.max(Number(saved.timeoutMs || DEFAULT_AI_CONFIG.timeoutMs), 2000), 15000)
-    };
+    return normalizeAiConfig(saved, { strictRemote: false });
   }
 
   async function saveAiConfig(cfg) {
-    // 铁律：严禁将 apiKey / token / secret 落盘 chrome.storage.local
-    const mode = cfg?.mode === 'remote' ? 'remote' : 'mock';
-    let baseUrl = String(cfg?.baseUrl || '').trim();
-    if (mode === 'remote') {
-      const checked = validateRemoteAiBaseUrl(baseUrl);
-      if (!checked.ok) {
-        throw new Error(checked.message);
-      }
-      baseUrl = checked.normalizedUrl;
-    }
-    const sanitized = {
-      mode,
-      baseUrl,
-      model: String(cfg?.model || DEFAULT_AI_CONFIG.model).trim(),
-      timeoutMs: Math.min(Math.max(Number(cfg?.timeoutMs || DEFAULT_AI_CONFIG.timeoutMs), 2000), 15000)
-    };
+    // 铁律：严禁将 apiKey / token / secret 落盘 chrome.storage.local（白名单字段持久化）
+    const sanitized = normalizeAiConfig(cfg, { strictRemote: true });
     await localSet({ [AI_CONFIG_KEY]: sanitized });
     return sanitized;
   }
@@ -172,6 +257,11 @@ export function createStore(chromeApi = globalThis.chrome) {
       return String(data?.[AI_API_KEY_SESSION_KEY] || '');
     }
     return volatileApiKey;
+  }
+
+  async function hasAiApiKey() {
+    const k = await getAiApiKey();
+    return Boolean(String(k || '').trim());
   }
 
   async function setAiApiKey(apiKey) {
@@ -316,6 +406,7 @@ export function createStore(chromeApi = globalThis.chrome) {
     getAiConfig,
     saveAiConfig,
     getAiApiKey,
+    hasAiApiKey,
     setAiApiKey,
     clearAiApiKey,
     exportSkillJson

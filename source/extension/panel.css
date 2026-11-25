@@ -548,3 +548,68 @@ button:disabled {
 .qa-bar-fill.error-bar {
   background: linear-gradient(90deg, #c93b3b, #e56b6b);
 }
+
+.key-label-row {
+  margin-top: 9px;
+  margin-bottom: 4px;
+}
+
+.key-status-pill {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: #edf1f8;
+  color: #65768f;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.key-status-pill.ready {
+  background: #e7f6ee;
+  color: #166a45;
+  border: 1px solid #bce4cd;
+}
+
+.probe-box {
+  margin-top: 8px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #f5f8fd;
+  border: 1px solid #d4e0f2;
+  color: #27436b;
+}
+
+.probe-box.ok {
+  background: #eefaf3;
+  border-color: #b7e2c8;
+  color: #155c3c;
+}
+
+.probe-box.error {
+  background: #fff3f3;
+  border-color: #f0bcbc;
+  color: #9e2727;
+}
+
+.ai-telemetry-bar {
+  margin-top: 8px;
+  padding: 6px 9px;
+  font-size: 10px;
+  line-height: 1.45;
+  border-radius: 7px;
+  background: #f5f8fd;
+  border: 1px solid #dbe5f4;
+  color: #40587a;
+  overflow-wrap: anywhere;
+}
+
+.step-ai-note {
+  font-size: 10px;
+  color: #1b658f;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}

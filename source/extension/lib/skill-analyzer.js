@@ -156,6 +156,8 @@ export async function analyzeRecordedTrace({ session, distilled = null, aiClient
     return {
       ok: true,
       mode: res.mode,
+      model: res.model || null,
+      latencyMs: res.latencyMs ?? 0,
       degraded: false,
       draft,
       previewPayload,
@@ -167,6 +169,8 @@ export async function analyzeRecordedTrace({ session, distilled = null, aiClient
   return {
     ok: true,
     mode: 'fallback',
+    model: res.model || null,
+    latencyMs: res.latencyMs ?? 0,
     degraded: true,
     errorCode: res.errorCode || 'AI_SCHEMA_INVALID',
     errorMessage: res.message || '模型解析失败，已安全降级为规则编辑草稿',

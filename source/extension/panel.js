@@ -37,7 +37,7 @@ import {
   exportSkillMarkdown,
   formatMcpToolJson
 } from './lib/skill-exporter.js';
-import { defaultStore, validateRemoteAiBaseUrl } from './lib/store.js';
+import { AI_PROVIDER_PRESETS, defaultStore, validateRemoteAiBaseUrl } from './lib/store.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -67,13 +67,39 @@ const state = {
   extractDriver: null,
   parsedCsv: null,
   csvMapping: {},
-  boundBatchRows: null
+  boundBatchRows: null,
+  userTouchedBatchLoop: false
 };
 
 const aiClient = createAiClient({
   getConfig: () => defaultStore.getAiConfig(),
-  getApiKey: () => defaultStore.getAiApiKey()
+  getApiKey: () => defaultStore.getAiApiKey(),
+  onTelemetry: (stats) => renderAiTelemetry(stats)
 });
+
+function formatAiSourceBadge({
+  mode = 'mock',
+  model = null,
+  latencyMs = 0,
+  usage = null,
+  retried = false,
+  degraded = false,
+  errorMessage = ''
+} = {}) {
+  if (degraded) {
+    return `⚠ 已降级规则兜底：${errorMessage || '模型响应异常'}`;
+  }
+  if (mode === 'remote') {
+    const pTok = Number(usage?.prompt_tokens || 0);
+    const cTok = Number(usage?.completion_tokens || 0);
+    const totalTok = pTok + cTok;
+    const tokStr = totalTok > 0 ? ` · ${totalTok} tokens` : '';
+    const msStr = latencyMs > 0 ? ` · ${latencyMs}ms` : '';
+    const retryStr = retried ? ' · 重试1次通过' : '';
+    return `远程 ${model || 'LLM'}${msStr}${tokStr}${retryStr}`;
+  }
+  return `Mock 离线 · ${latencyMs || 0}ms`;
+}
 
 const approvalClient = {
   approvePlan: ({ expectedPlanHash, payload }) =>
@@ -253,6 +279,9 @@ function renderSteps() {
     list.append(element('div', 'muted', '尚无动作'));
     return;
   }
+  const annMap = new Map(
+    (state.draft?.stepAnnotations || []).map((a) => [a.stepId, a.summary])
+  );
   steps.forEach((s, i) => {
     const div = element('div', 'step');
     const main = element('div', 'step-main');
@@ -260,6 +289,10 @@ function renderSteps() {
       element('div', null, describe(s)),
       element('div', 'step-locator', formatStepLocatorSummary(s))
     );
+    const annText = annMap.get(s.id);
+    if (annText) {
+      main.append(element('div', 'step-ai-note', `AI 摘要：${annText}`));
+    }
     div.append(element('b', null, `#${i + 1} ${s.action}`), main);
     if (!state.recording?.active) {
       const actions = element('div', 'step-actions');
@@ -494,6 +527,7 @@ async function start() {
     setStatus(true);
     disableSave(true);
     // 模块 A1：开始新录制时重置 02 区表单字段，避免上一个技能配置串入
+    state.userTouchedBatchLoop = false;
     $('skillIntent').value = '';
     $('resultSelector').value = '';
     $('extractSpecPreset').value = 'none';
@@ -575,8 +609,10 @@ async function stop() {
 
 async function runAnalyzeDraft() {
   if (!state.session?.steps?.length) return;
+  const btn = $('analyzeDraftBtn');
   try {
-    $('analyzeDraftBtn').disabled = true;
+    btn.disabled = true;
+    text(btn, 'AI 解析中...');
     const res = await analyzeRecordedTrace({
       session: state.session,
       distilled: state.distilled,
@@ -599,15 +635,41 @@ async function runAnalyzeDraft() {
     } else if (res.draft?.extractHint?.mode === 'receipt') {
       $('extractSpecPreset').value = 'sys_b_receipt';
     }
+
+    const batchHintSuggested = Boolean(
+      res.draft?.batchLoopHint &&
+        Array.isArray(res.draft.batchLoopHint.rowSteps) &&
+        res.draft.batchLoopHint.rowSteps.length > 0
+    );
+    let batchHintNote = '';
+    if (batchHintSuggested) {
+      if (!state.userTouchedBatchLoop && !$('enableBatchLoop').checked) {
+        $('enableBatchLoop').checked = true;
+        batchHintNote = '💡 AI 识别到重复填报特征，已自动勾选 1→N CSV 批量循环（可手动取消）。';
+      } else if (!$('enableBatchLoop').checked) {
+        batchHintNote = '💡 AI 建议：当前流程适合勾选“启用 1→N CSV 批量录入循环”。';
+      }
+    }
+
+    renderSteps();
     renderParameterEditor(res.draft?.parameterCandidates || null);
     renderDistillAndPreview();
 
     const notice = $('draftNotice');
     const parts = [];
+    const sourceBadge = formatAiSourceBadge(res);
     if (res.degraded) {
-      parts.push(`⚠ ${res.errorMessage || '已降级为规则草稿生成'}（不阻断保存）`);
+      parts.push(`${sourceBadge}（已回退规则草稿，不阻断保存）`);
     } else {
-      parts.push(`✓ 草稿生成成功（模式：${res.mode}${res.retried ? '，已自动纠错重试 1 次' : ''}）`);
+      parts.push(`✓ 草稿生成成功（${sourceBadge}）`);
+    }
+    if (batchHintNote) parts.push(batchHintNote);
+    if (res.draft?.stepAnnotations?.length) {
+      const topAnns = res.draft.stepAnnotations
+        .slice(0, 4)
+        .map((a) => `${a.stepId}: ${a.summary}`)
+        .join('；');
+      parts.push(`步骤摘要（${res.draft.stepAnnotations.length} 步）：${topAnns}`);
     }
     if (res.draft?.uncertainties?.length) {
       parts.push('不确定项：\n- ' + res.draft.uncertainties.join('\n- '));
@@ -617,7 +679,8 @@ async function runAnalyzeDraft() {
   } catch (e) {
     message('草稿生成失败：' + e.message);
   } finally {
-    $('analyzeDraftBtn').disabled = !state.session?.steps?.length;
+    text(btn, 'AI 生成草稿');
+    btn.disabled = !state.session?.steps?.length;
   }
 }
 
@@ -1134,25 +1197,34 @@ async function runMatchSkill() {
     message('当前尚未保存任何技能，请先录制并保存技能');
     return;
   }
-  const res = await matchSkillByQuery({ userQuery, skills, aiClient });
-  const box = $('matchResultBox');
-  box.hidden = false;
-  if (!res.matchedSkillId) {
-    text(box, `未找到高置信度匹配技能（置信度：${res.confidence}），请在下方手动选择。`);
-    return;
-  }
-  state.allSkills = skills;
-  const matched = skills.find((s) => s.id === res.matchedSkillId);
-  text(
-    box,
-    `已命中技能：“${matched?.name || res.matchedSkillId}”（置信度：${res.confidence}${res.degraded ? ' · 规则兜底' : ''}）`
-  );
-  // Bug 2 + P1 修复：搜索过滤态下也确保清空检索词并稳定选中命中技能
-  await selectSkillInPicker(res.matchedSkillId, { prefillDefaults: false });
+  const btn = $('matchSkillBtn');
+  btn.disabled = true;
+  text(btn, 'AI 解析中...');
+  try {
+    const res = await matchSkillByQuery({ userQuery, skills, aiClient });
+    const box = $('matchResultBox');
+    box.hidden = false;
+    const badge = formatAiSourceBadge(res);
+    if (!res.matchedSkillId) {
+      text(box, `未找到高置信度匹配技能（置信度：${res.confidence}）[ ${badge} ]，请在下方手动选择。`);
+      return;
+    }
+    state.allSkills = skills;
+    const matched = skills.find((s) => s.id === res.matchedSkillId);
+    text(
+      box,
+      `已命中技能：“${matched?.name || res.matchedSkillId}”（置信度：${res.confidence}）[ ${badge} ]`
+    );
+    // Bug 2 + P1 修复：搜索过滤态下也确保清空检索词并稳定选中命中技能
+    await selectSkillInPicker(res.matchedSkillId, { prefillDefaults: false });
 
-  if (state.loaded?.parameters?.some((p) => p.type !== 'dataset')) {
-    $('nlArgInput').value = userQuery;
-    await runExtractArgs();
+    if (state.loaded?.parameters?.some((p) => p.type !== 'dataset')) {
+      $('nlArgInput').value = userQuery;
+      await runExtractArgs();
+    }
+  } finally {
+    btn.disabled = false;
+    text(btn, '匹配技能');
   }
 }
 
@@ -1160,25 +1232,35 @@ async function runExtractArgs() {
   if (!state.loaded) return;
   const userText = $('nlArgInput').value.trim();
   if (!userText) return;
-  const res = await extractArgsFromInput({
-    userText,
-    parameters: state.loaded.parameters || [],
-    collectedArgs: argsFromUI(),
-    lastQuestion: state.lastQuestion,
-    currentDate: new Date().toISOString().slice(0, 10),
-    aiClient
-  });
-  setArgsToUI(res.providedArgs || {});
-  state.lastQuestion = res.nextQuestion || null;
-  await invalidateApproval();
+  const btn = $('extractArgsBtn');
+  btn.disabled = true;
+  text(btn, 'AI 解析中...');
+  try {
+    const res = await extractArgsFromInput({
+      userText,
+      parameters: state.loaded.parameters || [],
+      collectedArgs: argsFromUI(),
+      lastQuestion: state.lastQuestion,
+      currentDate: new Date().toISOString().slice(0, 10),
+      aiClient
+    });
+    setArgsToUI(res.providedArgs || {});
+    state.lastQuestion = res.nextQuestion || null;
+    await invalidateApproval();
 
-  const clarify = $('clarifyBox');
-  if (res.invalidArgs?.length || res.missingRequired?.length) {
-    text(clarify, res.nextQuestion || `请补充参数：${res.missingRequired.join('、')}`);
-    clarify.hidden = false;
-  } else {
-    text(clarify, '✓ 全部必填参数已补齐并通过格式校验，可预览执行计划。');
-    clarify.hidden = false;
+    const badge = formatAiSourceBadge(res);
+    const clarify = $('clarifyBox');
+    if (res.invalidArgs?.length || res.missingRequired?.length) {
+      const promptMsg = res.nextQuestion || `请补充参数：${res.missingRequired.join('、')}`;
+      text(clarify, `${promptMsg}\n[ ${badge} ]`);
+      clarify.hidden = false;
+    } else {
+      text(clarify, `✓ 全部必填参数已补齐并通过格式校验，可预览执行计划。\n[ ${badge} ]`);
+      clarify.hidden = false;
+    }
+  } finally {
+    btn.disabled = false;
+    text(btn, '解析补参');
   }
 }
 
@@ -1884,36 +1966,251 @@ async function handleLoadFailedRowsToQueue() {
 
 async function answer() {
   const q = $('question').value.trim();
-  const res = await answerRunQuestion({
-    question: q,
-    records: state.records,
-    recordSchema: state.recordSchema,
-    runSummary: state.lastRunSummary,
-    aiClient
-  });
-  text($('answer'), res.answer);
-  renderQaCharts(res.cannotCompute ? null : res.computedEvidence);
+  const askBtn = $('ask');
+  if (askBtn) {
+    askBtn.disabled = true;
+    text(askBtn, 'AI 分析中...');
+  }
+  try {
+    const res = await answerRunQuestion({
+      question: q,
+      records: state.records,
+      recordSchema: state.recordSchema,
+      runSummary: state.lastRunSummary,
+      aiClient
+    });
+    const parts = [String(res.answer || '').trim()];
+    if (
+      Array.isArray(res.evidenceRefs) &&
+      res.evidenceRefs.length > 0 &&
+      !parts[0].includes('【证据索引】')
+    ) {
+      parts.push(`【证据索引】${res.evidenceRefs.join(', ')}`);
+    }
+    if (Array.isArray(res.caveats) && res.caveats.length > 0 && !parts[0].includes('【说明】')) {
+      parts.push(`【说明】${res.caveats.join('；')}`);
+    }
+    const srcLabel =
+      res.mode === 'guard' || res.mode === 'rule'
+        ? '安全护栏拦截 · 0 次模型调用'
+        : formatAiSourceBadge({
+            mode: res.meta?.mode || res.mode,
+            model: res.meta?.model,
+            latencyMs: res.meta?.latencyMs,
+            usage: res.meta?.usage,
+            retried: res.meta?.retried,
+            degraded: res.degraded,
+            errorMessage: res.meta?.degradedReason
+          });
+    parts.push(`[ ${srcLabel} ]`);
+    text($('answer'), parts.filter(Boolean).join('\n'));
+    renderQaCharts(res.cannotCompute ? null : res.computedEvidence);
+  } catch (e) {
+    text($('answer'), `查询分析失败：${e.message}`);
+  } finally {
+    if (askBtn) {
+      askBtn.disabled = false;
+      text(askBtn, '查询分析结果');
+    }
+  }
+}
+
+function renderAiTelemetry(stats = aiClient.getStats()) {
+  const bar = $('aiTelemetryBar');
+  if (!bar) return;
+  if (!stats.lastTask) {
+    text(
+      bar,
+      `AI 遥测：尚未调用（累计 ${stats.calls || 0} 次 · 重试 ${stats.retries || 0} · 降级 ${stats.degradedCount || 0}）`
+    );
+    return;
+  }
+  const modeLabel =
+    stats.lastMode === 'remote' ? (stats.lastError ? '异常/降级' : '远程') : 'Mock';
+  const lu = stats.lastUsage;
+  const tokPart = lu
+    ? ` · ${Number(lu.prompt_tokens || 0)}+${Number(lu.completion_tokens || 0)} tok`
+    : '';
+  const totalTok = (stats.totalPromptTokens || 0) + (stats.totalCompletionTokens || 0);
+  text(
+    bar,
+    `AI 遥测：最近 ${stats.lastTask} · ${modeLabel} · ${stats.lastModel || '-'} · ${stats.lastLatencyMs || 0}ms${tokPart}（累计 ${stats.calls || 0} 次 · 重试 ${stats.retries || 0} · 降级 ${stats.degradedCount || 0} · 共 ${totalTok} tok）`
+  );
+}
+
+function populateModelDatalist(models = []) {
+  const dl = $('aiModelSuggestions');
+  if (!dl) return;
+  dl.replaceChildren();
+  const uniq = Array.from(new Set((models || []).map((m) => String(m || '').trim()).filter(Boolean))).slice(
+    0,
+    80
+  );
+  for (const id of uniq) {
+    const opt = element('option');
+    opt.value = id;
+    dl.append(opt);
+  }
+}
+
+async function renderAiKeyStatus() {
+  const badge = $('aiKeyStatusBadge');
+  if (!badge) return;
+  const configured = await defaultStore.hasAiApiKey();
+  text(badge, configured ? '会话 Key：已配置（仅内存）' : '会话 Key：未配置');
+  badge.classList.toggle('ready', configured);
+}
+
+function showAiProbeResult(ok, lines) {
+  const box = $('aiProbeResult');
+  if (!box) return;
+  box.className = 'probe-box ' + (ok === true ? 'ok' : ok === false ? 'error' : '');
+  text(box, Array.isArray(lines) ? lines.join('\n') : String(lines || ''));
+  box.hidden = false;
+}
+
+function readAiFormDraft() {
+  const sec = Number($('aiTimeoutSec')?.value || 30);
+  const timeoutMs = Number.isFinite(sec)
+    ? Math.min(Math.max(Math.round(sec * 1000), 5000), 60000)
+    : 30000;
+  return {
+    mode: $('aiMode').value === 'remote' ? 'remote' : 'mock',
+    provider: $('aiProvider')?.value || 'siliconflow',
+    baseUrl: ($('aiBaseUrl')?.value || '').trim(),
+    model: ($('aiModel')?.value || '').trim(),
+    timeoutMs,
+    thinkingMode: $('aiThinkingMode')?.value === 'off' ? 'off' : 'auto',
+    unsavedApiKey: ($('aiApiKey')?.value || '').trim()
+  };
 }
 
 async function loadAiSettingsUI() {
   const cfg = await defaultStore.getAiConfig();
   $('aiMode').value = cfg.mode;
-  $('aiBaseUrl').value = cfg.baseUrl;
-  $('aiModel').value = cfg.model;
+  if ($('aiProvider')) $('aiProvider').value = cfg.provider || 'siliconflow';
+  $('aiBaseUrl').value = cfg.baseUrl || '';
+  $('aiModel').value = cfg.model || 'deepseek-v4-flash-0731';
+  if ($('aiTimeoutSec')) $('aiTimeoutSec').value = String(Math.round((cfg.timeoutMs || 30000) / 1000));
+  if ($('aiThinkingMode')) $('aiThinkingMode').value = cfg.thinkingMode || 'auto';
+  const preset = AI_PROVIDER_PRESETS[cfg.provider] || AI_PROVIDER_PRESETS.siliconflow;
+  populateModelDatalist([cfg.model, ...(preset?.suggestedModels || [])]);
   $('remoteAiFields').hidden = cfg.mode !== 'remote';
   text($('aiModeTag'), cfg.mode === 'remote' ? `远程 (${cfg.model})` : 'Mock 离线');
+  await renderAiKeyStatus();
+  renderAiTelemetry();
 }
 
 $('aiMode').addEventListener('change', () => {
   $('remoteAiFields').hidden = $('aiMode').value !== 'remote';
+  if ($('aiProbeResult')) $('aiProbeResult').hidden = true;
+});
+
+$('aiProvider')?.addEventListener('change', () => {
+  const pId = $('aiProvider').value;
+  const preset = AI_PROVIDER_PRESETS[pId];
+  if (preset && pId !== 'custom') {
+    $('aiBaseUrl').value = preset.baseUrl;
+    $('aiModel').value = preset.defaultModel;
+  }
+  populateModelDatalist(preset?.suggestedModels || []);
+  if ($('aiProbeResult')) $('aiProbeResult').hidden = true;
+});
+
+$('testAiConnBtn')?.addEventListener('click', async () => {
+  const btn = $('testAiConnBtn');
+  const draft = readAiFormDraft();
+  const urlCheck = validateRemoteAiBaseUrl(draft.baseUrl);
+  if (!urlCheck.ok) {
+    showAiProbeResult(false, [`✗ ${urlCheck.message}`]);
+    return;
+  }
+  btn.disabled = true;
+  text(btn, '探测中...');
+  showAiProbeResult(null, `正在向 ${urlCheck.normalizedUrl} 发送最小 JSON 探针...`);
+  try {
+    await checkPermission(urlCheck.normalizedUrl, true);
+    const res = await aiClient.testConnection({
+      baseUrl: urlCheck.normalizedUrl,
+      model: draft.model,
+      timeoutMs: draft.timeoutMs,
+      thinkingMode: draft.thinkingMode,
+      apiKey: draft.unsavedApiKey
+    });
+    if (res.ok) {
+      const tokText = res.usage
+        ? ` | Token: ${Number(res.usage.prompt_tokens || 0)}+${Number(res.usage.completion_tokens || 0)}`
+        : '';
+      const replyPreview = res.parsedJson ? JSON.stringify(res.parsedJson) : res.rawPreview;
+      showAiProbeResult(true, [
+        `✓ ${res.message}（HTTP ${res.httpStatus} · ${res.latencyMs}ms${tokText}）`,
+        `模型：${res.model} | 端点：${res.endpoint}`,
+        `模型返回：${replyPreview}`,
+        ...(res.hint ? [res.hint] : [])
+      ]);
+    } else {
+      showAiProbeResult(false, [
+        `✗ 连通失败（${res.httpStatus ? 'HTTP ' + res.httpStatus : res.errorCode} · ${res.latencyMs}ms）`,
+        `原因：${res.message}`,
+        `排查建议：${res.hint}`
+      ]);
+    }
+  } catch (e) {
+    showAiProbeResult(false, [`✗ 无法发起连通测试：${e.message}`]);
+  } finally {
+    btn.disabled = false;
+    text(btn, '测试连通性');
+  }
+});
+
+$('fetchAiModelsBtn')?.addEventListener('click', async () => {
+  const btn = $('fetchAiModelsBtn');
+  const draft = readAiFormDraft();
+  const urlCheck = validateRemoteAiBaseUrl(draft.baseUrl);
+  if (!urlCheck.ok) {
+    showAiProbeResult(false, [`✗ ${urlCheck.message}`]);
+    return;
+  }
+  btn.disabled = true;
+  text(btn, '拉取中...');
+  showAiProbeResult(null, `正在拉取 ${urlCheck.normalizedUrl}/models ...`);
+  try {
+    await checkPermission(urlCheck.normalizedUrl, true);
+    const res = await aiClient.listModels({
+      baseUrl: urlCheck.normalizedUrl,
+      model: draft.model,
+      timeoutMs: draft.timeoutMs,
+      apiKey: draft.unsavedApiKey
+    });
+    if (res.ok) {
+      populateModelDatalist([draft.model, ...res.models]);
+      const dsPreview = res.deepseekModels.length
+        ? `DeepSeek 候选(${res.deepseekModels.length})：${res.deepseekModels.slice(0, 6).join(', ')}`
+        : `前几项示例：${res.models.slice(0, 6).join(', ')}`;
+      showAiProbeResult(true, [
+        `✓ 已拉取 ${res.count} 个模型并填入候选下拉（HTTP ${res.httpStatus} · ${res.latencyMs}ms）`,
+        dsPreview
+      ]);
+    } else {
+      showAiProbeResult(false, [
+        `✗ 拉取模型列表失败（${res.httpStatus ? 'HTTP ' + res.httpStatus : res.errorCode} · ${res.latencyMs}ms）`,
+        `原因：${res.message}`,
+        `排查建议：${res.hint}`
+      ]);
+    }
+  } catch (e) {
+    showAiProbeResult(false, [`✗ 拉取模型列表失败：${e.message}`]);
+  } finally {
+    btn.disabled = false;
+    text(btn, '拉取模型列表');
+  }
 });
 
 $('saveAiConfig').addEventListener('click', async () => {
   try {
-    const mode = $('aiMode').value;
-    const rawBaseUrl = $('aiBaseUrl').value.trim();
-    if (mode === 'remote') {
-      const urlCheck = validateRemoteAiBaseUrl(rawBaseUrl);
+    const draft = readAiFormDraft();
+    if (draft.mode === 'remote') {
+      const urlCheck = validateRemoteAiBaseUrl(draft.baseUrl);
       if (!urlCheck.ok) {
         throw new Error(urlCheck.message);
       }
@@ -1921,17 +2218,21 @@ $('saveAiConfig').addEventListener('click', async () => {
       await checkPermission(urlCheck.normalizedUrl, true);
     }
     const saved = await defaultStore.saveAiConfig({
-      mode,
-      baseUrl: rawBaseUrl,
-      model: $('aiModel').value
+      mode: draft.mode,
+      provider: draft.provider,
+      baseUrl: draft.baseUrl,
+      model: draft.model,
+      timeoutMs: draft.timeoutMs,
+      thinkingMode: draft.thinkingMode
     });
-    const keyVal = $('aiApiKey').value.trim();
-    if (keyVal) {
-      await defaultStore.setAiApiKey(keyVal);
+    if (draft.unsavedApiKey) {
+      await defaultStore.setAiApiKey(draft.unsavedApiKey);
       $('aiApiKey').value = '';
     }
     await loadAiSettingsUI();
-    message(`模型配置已保存（模式：${saved.mode}，API Key 仅存 session 内存）。`);
+    message(
+      `模型配置已保存（${saved.provider} · ${saved.mode} · ${saved.model} · 超时 ${Math.round(saved.timeoutMs / 1000)}s，API Key 仅存 session 内存）。`
+    );
   } catch (e) {
     message('保存模型设置失败：' + e.message);
   }
@@ -1940,7 +2241,12 @@ $('saveAiConfig').addEventListener('click', async () => {
 $('clearAiKey').addEventListener('click', async () => {
   await defaultStore.clearAiApiKey();
   $('aiApiKey').value = '';
+  await renderAiKeyStatus();
   message('已清空会话内存中的 API Key。');
+});
+
+$('enableBatchLoop')?.addEventListener('change', () => {
+  state.userTouchedBatchLoop = true;
 });
 
 $('csvFileInput').addEventListener('change', async (evt) => {

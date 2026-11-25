@@ -505,8 +505,10 @@ export function validateExtractArgsProposal(proposal, parameters = []) {
   const invalidArgs = [];
 
   for (const [k, v] of Object.entries(rawProvided)) {
+    if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) {
+      continue;
+    }
     if (!paramMap.has(k)) {
-      errors.push(`providedArgs 包含未定义参数: ${k}`);
       continue;
     }
     const checked = validateTypedParamValue(paramMap.get(k), v);
