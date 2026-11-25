@@ -1,0 +1,10 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>SkillFlow 测试业务：月度数据查询</title><style>body{background:#f2f5fa;color:#1c2c42;font-family:system-ui,Arial,"Microsoft YaHei",sans-serif;margin:0;padding:46px}.wrap{max-width:720px;margin:auto;background:#fff;border-radius:16px;padding:36px;box-shadow:0 9px 40px #13386812}h1{font-size:24px}label{display:block;margin:20px 0;font-size:13px;color:#435775}input{display:block;margin-top:6px;padding:12px;border:1px solid #cbd6e6;border-radius:8px;min-width:280px;font-size:15px}button{padding:11px 26px;background:#2563ac;color:#fff;border:0;border-radius:7px;cursor:pointer;font-size:15px}#result{background:#eef7fd;border-radius:9px;padding:16px;margin-top:20px;min-height:20px}small{color:#7a889e}a{color:#2563ac}</style></head>
+<body><div class="wrap"><small>本地测试页面 · 无真实业务数据 · 非生产系统</small><h1>月度电量数据查询（模拟）</h1><p>请在此页面完成一次手工查询操作，用于验证插件录制与参数化回放。</p><label for="unit">查询单位<input id="unit" name="unit" value="" placeholder="例如 A单位"></label><label for="month">查询月份<input id="month" name="month" type="month"></label><button id="query" type="button">查询数据</button><div id="result" data-status="idle">尚未查询</div><p><a href="/second.html">前往第二页（跨页面验证）</a></p></div>
+<script>
+ const unit=document.querySelector('#unit'),month=document.querySelector('#month'),result=document.querySelector('#result');
+ document.querySelector('#query').addEventListener('click',()=>{
+   const u=unit.value.trim(),m=month.value;
+   if(!u||!m){result.dataset.status='error';result.textContent='输入不完整';return;}
+   result.dataset.status='ok';result.textContent=`查询成功：${u} · ${m} · 记录3条 · 电量合计 1260 kWh（模拟数据）`;
+ });
+</script></body></html>

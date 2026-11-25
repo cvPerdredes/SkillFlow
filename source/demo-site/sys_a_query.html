@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>系统 A · 营销 2.0 客户与电量台账查询（仿真 18761）</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px;
+      background: #f1f5fb;
+      color: #192942;
+      font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    .wrap {
+      max-width: 960px;
+      margin: auto;
+      background: #fff;
+      border-radius: 14px;
+      padding: 24px 28px;
+      box-shadow: 0 10px 36px rgba(19, 56, 104, 0.08);
+    }
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #e5ecf6;
+      margin-bottom: 18px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #e8f7f0;
+      color: #166c48;
+    }
+    .badge.logged-out {
+      background: #fff0f0;
+      color: #b72b2b;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    button {
+      padding: 9px 15px;
+      border-radius: 8px;
+      border: 1px solid #c6d4ea;
+      background: #f5f9ff;
+      color: #254a80;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.primary {
+      background: #2362b5;
+      color: #fff;
+      border-color: #2362b5;
+    }
+    a.nav-link {
+      display: inline-block;
+      padding: 8px 13px;
+      border-radius: 8px;
+      background: #eef4ff;
+      color: #1d56a5;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    h1 { font-size: 20px; margin: 4px 0 6px; }
+    .sub { color: #677790; font-size: 13px; margin: 0 0 16px; }
+    .card {
+      background: #f9fbff;
+      border: 1px solid #e2eaf6;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      align-items: end;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #465874;
+      font-weight: 600;
+    }
+    input, select {
+      display: block;
+      width: 100%;
+      margin-top: 6px;
+      padding: 9px 11px;
+      border: 1px solid #c9d5e8;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fff;
+    }
+    .summary {
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #eef6ff;
+      color: #1f4f8e;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .summary[data-status="error"] {
+      background: #fff1f1;
+      color: #ad2626;
+    }
+    .summary[data-status="ok"] {
+      background: #ecf9f2;
+      color: #146a47;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #dfe7f2;
+      padding: 9px 10px;
+      text-align: left;
+    }
+    th {
+      background: #f4f7fc;
+      color: #364b68;
+    }
+    .v2-layer {
+      padding: 6px;
+      border: 1px dashed #9bb9e8;
+      border-radius: 8px;
+      background: #f2f7ff;
+    }
+    .v2-inner {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .dup-btn {
+      background: #fff8ea;
+      border-color: #e6ba67;
+      color: #7c4f05;
+    }
+    .login-err {
+      color: #b42626;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <small>本地仿真系统 A · 固定端口 18761 · 无真实生产数据</small>
+      <h1>营销 2.0 客户与电量台账查询系统</h1>
+    </div>
+    <span id="user-badge" class="badge">已登录：浙电测试操作员</span>
+  </div>
+
+  <div class="toolbar" style="margin-bottom:16px">
+    <button type="button" id="toggle-auth-btn">模拟会话过期（登出）</button>
+    <button type="button" id="toggle-captcha-btn">开启模拟验证码</button>
+    <button type="button" id="toggle-layout-btn">切换轻改版布局 (layout=v2)</button>
+    <button type="button" id="toggle-ambiguous-btn">切换歧义按钮 (ambiguous=1)</button>
+    <a id="goto-sys-b" class="nav-link" href="http://127.0.0.1:18762/sys_b_form.html">前往系统 B（台账录入 18762）</a>
+  </div>
+
+  <form id="login-form" class="card" data-auth-form="true" hidden>
+    <h2 style="margin:0 0 10px;font-size:15px;">系统 A 统一认证（模拟 4A/SSO 会话）</h2>
+    <div class="form-grid">
+      <label for="login-user">员工账号
+        <input id="login-user" name="loginUser" placeholder="例如 sg_ops01" autocomplete="off">
+      </label>
+      <label for="login-pass">登录密码
+        <input id="login-pass" name="loginPass" type="password" placeholder="任意测试口令" autocomplete="off">
+      </label>
+      <label id="captcha-wrap" for="login-captcha" hidden>图形验证码（输入 1234）
+        <input id="login-captcha" name="loginCaptcha" placeholder="输入 1234" autocomplete="off">
+      </label>
+      <div>
+        <button id="login-submit" class="primary" type="submit">登录系统 A</button>
+      </div>
+    </div>
+    <div id="login-error" class="login-err"></div>
+  </form>
+
+  <div id="query-panel" class="card">
+    <p class="sub" id="route-info">当前路由：#/marketing/query · 支持按供电单位与月份查询客户批号及电量明细。</p>
+    <div class="form-grid" id="query-form-grid">
+      <label id="lbl-unit" for="unit">查询单位
+        <input id="unit" name="unit" data-testid="unit-input" placeholder="例如 杭州供电所 / B单位">
+      </label>
+      <label id="lbl-month" for="month">查询月份
+        <input id="month" name="month" type="month" data-testid="month-input">
+      </label>
+      <label id="lbl-voltage" for="voltage-level">电压等级
+        <select id="voltage-level" name="voltageLevel">
+          <option value="全部">全部</option>
+          <option value="10kV">10kV</option>
+          <option value="35kV">35kV</option>
+          <option value="110kV">110kV</option>
+        </select>
+      </label>
+      <div id="query-btn-host">
+        <button id="query-btn" class="primary" type="button" data-testid="query-btn">查询数据</button>
+      </div>
+    </div>
+    <div id="ambiguous-host" style="margin-top:10px;" hidden>
+      <button id="dup-query-btn" class="dup-btn" type="button">查询数据</button>
+    </div>
+  </div>
+
+  <div id="result-summary" class="summary" data-status="idle">尚未查询：请输入单位与月份后点击查询。</div>
+
+  <table id="result-table">
+    <thead>
+      <tr>
+        <th>客户批号</th>
+        <th>供电单位</th>
+        <th>电压等级</th>
+        <th>查询月份</th>
+        <th>状态</th>
+        <th>申报电量(kWh)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="6" style="color:#7c8ba2;text-align:center;">暂无查询结果</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+(() => {
+  const AUTH_KEY = 'sf_demo_sysa_auth';
+  const DATASET = [
+    { batch: 'KH-202611-HZ01', unit: '杭州供电所', voltage: '10kV', month: '2026-11', status: '正常', kwh: 12800 },
+    { batch: 'KH-202611-HZ02', unit: '杭州供电所', voltage: '35kV', month: '2026-11', status: '正常', kwh: 26400 },
+    { batch: 'KH-202611-HZ03', unit: '杭州供电所', voltage: '110kV', month: '2026-11', status: '待核对', kwh: 41200 },
+    { batch: 'KH-202611-NB01', unit: '宁波供电所', voltage: '10kV', month: '2026-11', status: '正常', kwh: 18500 },
+    { batch: 'KH-202611-NB02', unit: '宁波供电所', voltage: '35kV', month: '2026-11', status: '正常', kwh: 32900 },
+    { batch: 'KH-202611-WZ01', unit: '温州供电所', voltage: '10kV', month: '2026-11', status: '正常', kwh: 9600 },
+    { batch: 'KH-202611-JX01', unit: '嘉兴供电所', voltage: '110kV', month: '2026-11', status: '正常', kwh: 45100 },
+    { batch: 'KH-202610-A01', unit: 'A单位', voltage: '10kV', month: '2026-10', status: '正常', kwh: 1260 },
+    { batch: 'KH-202611-B01', unit: 'B单位', voltage: '10kV', month: '2026-11', status: '正常', kwh: 1580 },
+    { batch: 'KH-202611-B02', unit: 'B单位', voltage: '35kV', month: '2026-11', status: '待核对', kwh: 4920 }
+  ];
+
+  const params = new URLSearchParams(location.search);
+  let needCaptcha = false;
+  let layoutV2 = params.get('layout') === 'v2';
+  let ambiguousMode = params.get('ambiguous') === '1';
+
+  if (params.get('needAuth') === '1') {
+    sessionStorage.setItem(AUTH_KEY, '0');
+  } else if (sessionStorage.getItem(AUTH_KEY) === null) {
+    sessionStorage.setItem(AUTH_KEY, '1');
+  }
+  if (!location.hash) {
+    history.replaceState(null, '', location.pathname + location.search + '#/marketing/query');
+  }
+
+  const loginForm = document.getElementById('login-form');
+  const queryPanel = document.getElementById('query-panel');
+  const userBadge = document.getElementById('user-badge');
+  const captchaWrap = document.getElementById('captcha-wrap');
+  const loginError = document.getElementById('login-error');
+  const summaryEl = document.getElementById('result-summary');
+  const tbody = document.querySelector('#result-table tbody');
+  const routeInfo = document.getElementById('route-info');
+
+  function getQueryEls() {
+    return {
+      unitEl: document.querySelector('#query-panel input[name="unit"]'),
+      monthEl: document.querySelector('#query-panel input[name="month"]'),
+      voltEl: document.querySelector('#query-panel select[name="voltageLevel"]'),
+      btnEl: document.querySelector('#query-btn-host button')
+    };
+  }
+
+  function renderAuthState() {
+    const authed = sessionStorage.getItem(AUTH_KEY) === '1';
+    loginForm.hidden = authed;
+    queryPanel.hidden = !authed;
+    userBadge.textContent = authed ? '已登录：浙电测试操作员' : '未登录 / 会话已过期';
+    userBadge.classList.toggle('logged-out', !authed);
+    document.getElementById('toggle-auth-btn').textContent = authed ? '模拟会话过期（登出）' : '恢复已登录';
+    captchaWrap.hidden = !needCaptcha;
+  }
+
+  function applyLayoutMode() {
+    const { unitEl, monthEl, btnEl } = getQueryEls();
+    const lblUnit = document.getElementById('lbl-unit');
+    const lblMonth = document.getElementById('lbl-month');
+    const btnHost = document.getElementById('query-btn-host');
+
+    if (layoutV2) {
+      unitEl.id = 'ext-gen-9101';
+      monthEl.id = 'ext-gen-9102';
+      btnEl.id = 'ext-gen-9103';
+      unitEl.removeAttribute('data-testid');
+      monthEl.removeAttribute('data-testid');
+      btnEl.removeAttribute('data-testid');
+      lblUnit.setAttribute('for', 'ext-gen-9101');
+      lblMonth.setAttribute('for', 'ext-gen-9102');
+      btnHost.innerHTML = '<div class="v2-layer"><div class="v2-inner"></div></div>';
+      btnHost.querySelector('.v2-inner').appendChild(btnEl);
+      routeInfo.textContent = '当前路由：' + (location.hash || '#/marketing/query') + ' · [已开启 v2 轻改版：动态ID + 嵌套变更]';
+    } else {
+      unitEl.id = 'unit';
+      monthEl.id = 'month';
+      btnEl.id = 'query-btn';
+      unitEl.setAttribute('data-testid', 'unit-input');
+      monthEl.setAttribute('data-testid', 'month-input');
+      btnEl.setAttribute('data-testid', 'query-btn');
+      lblUnit.setAttribute('for', 'unit');
+      lblMonth.setAttribute('for', 'month');
+      btnHost.innerHTML = '';
+      btnHost.appendChild(btnEl);
+      routeInfo.textContent = '当前路由：' + (location.hash || '#/marketing/query') + ' · 支持按供电单位与月份查询客户批号及电量明细。';
+    }
+    document.getElementById('ambiguous-host').hidden = !ambiguousMode;
+  }
+
+  function runQuery() {
+    const { unitEl, monthEl, voltEl } = getQueryEls();
+    const u = unitEl.value.trim();
+    const m = monthEl.value.trim();
+    const v = voltEl.value;
+    if (!u || !m) {
+      summaryEl.dataset.status = 'error';
+      summaryEl.textContent = '查询失败：查询单位与查询月份不能为空。';
+      tbody.innerHTML = '<tr><td colspan="6" style="color:#ad2626;text-align:center;">输入不完整</td></tr>';
+      return;
+    }
+    if (u === '未知单位' || u === '未备案所') {
+      summaryEl.dataset.status = 'error';
+      summaryEl.textContent = `查询失败：单位 ${u} 未在营销系统中备案。`;
+      tbody.innerHTML = '<tr><td colspan="6" style="color:#ad2626;text-align:center;">未查询到匹配台账</td></tr>';
+      return;
+    }
+    let rows = DATASET.filter((r) => (u === '全部' || r.unit.includes(u)) && r.month === m && (v === '全部' || r.voltage === v));
+    if (!rows.length) {
+      rows = [
+        { batch: `KH-${m.replace('-', '')}-01`, unit: u, voltage: v === '全部' ? '10kV' : v, month: m, status: '正常', kwh: 15200 },
+        { batch: `KH-${m.replace('-', '')}-02`, unit: u, voltage: v === '全部' ? '35kV' : v, month: m, status: '正常', kwh: 22400 }
+      ];
+    }
+    const totalKwh = rows.reduce((sum, r) => sum + r.kwh, 0);
+    summaryEl.dataset.status = 'ok';
+    summaryEl.textContent = `查询成功：${u} · ${m} · 共 ${rows.length} 条记录 · 总电量 ${totalKwh} kWh（首行批号：${rows[0].batch}）`;
+    tbody.innerHTML = rows
+      .map(
+        (r) =>
+          `<tr><td>${r.batch}</td><td>${r.unit}</td><td>${r.voltage}</td><td>${r.month}</td><td>${r.status}</td><td>${r.kwh}</td></tr>`
+      )
+      .join('');
+  }
+
+  document.getElementById('query-btn').addEventListener('click', runQuery);
+  document.getElementById('dup-query-btn').addEventListener('click', runQuery);
+
+  loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const user = document.getElementById('login-user').value.trim();
+    const pass = document.getElementById('login-pass').value;
+    const cap = document.getElementById('login-captcha').value.trim();
+    if (!user || !pass) {
+      loginError.textContent = '请输入账号和密码';
+      return;
+    }
+    if (needCaptcha && cap !== '1234') {
+      loginError.textContent = '模拟验证码错误（请输入 1234）';
+      return;
+    }
+    loginError.textContent = '';
+    sessionStorage.setItem(AUTH_KEY, '1');
+    renderAuthState();
+  });
+
+  document.getElementById('toggle-auth-btn').addEventListener('click', () => {
+    const authed = sessionStorage.getItem(AUTH_KEY) === '1';
+    sessionStorage.setItem(AUTH_KEY, authed ? '0' : '1');
+    renderAuthState();
+  });
+
+  document.getElementById('toggle-captcha-btn').addEventListener('click', () => {
+    needCaptcha = !needCaptcha;
+    document.getElementById('toggle-captcha-btn').textContent = needCaptcha ? '关闭模拟验证码' : '开启模拟验证码';
+    renderAuthState();
+  });
+
+  document.getElementById('toggle-layout-btn').addEventListener('click', () => {
+    layoutV2 = !layoutV2;
+    applyLayoutMode();
+  });
+
+  document.getElementById('toggle-ambiguous-btn').addEventListener('click', () => {
+    ambiguousMode = !ambiguousMode;
+    applyLayoutMode();
+  });
+
+  renderAuthState();
+  applyLayoutMode();
+})();
+</script>
+</body>
+</html>

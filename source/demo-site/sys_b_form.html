@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>系统 B · 工单与业务台账批量录入（仿真 18762）</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px;
+      background: #f3f6fb;
+      color: #192942;
+      font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    .wrap {
+      max-width: 960px;
+      margin: auto;
+      background: #fff;
+      border-radius: 14px;
+      padding: 24px 28px;
+      box-shadow: 0 10px 36px rgba(19, 56, 104, 0.08);
+    }
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #e5ecf6;
+      margin-bottom: 18px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #e8f7f0;
+      color: #166c48;
+    }
+    .badge.logged-out {
+      background: #fff0f0;
+      color: #b72b2b;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    button {
+      padding: 9px 15px;
+      border-radius: 8px;
+      border: 1px solid #c6d4ea;
+      background: #f5f9ff;
+      color: #254a80;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.primary {
+      background: #2362b5;
+      color: #fff;
+      border-color: #2362b5;
+    }
+    a.nav-link {
+      display: inline-block;
+      padding: 8px 13px;
+      border-radius: 8px;
+      background: #eef4ff;
+      color: #1d56a5;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    h1 { font-size: 20px; margin: 4px 0 6px; }
+    .card {
+      background: #f9fbff;
+      border: 1px solid #e2eaf6;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      align-items: end;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #465874;
+      font-weight: 600;
+    }
+    input, select {
+      display: block;
+      width: 100%;
+      margin-top: 6px;
+      padding: 9px 11px;
+      border: 1px solid #c9d5e8;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fff;
+    }
+    .receipt {
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      border: 1px solid #dce6f5;
+      background: #f5f9ff;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .receipt[data-status="ok"] {
+      background: #ecf9f2;
+      border-color: #b7e3cb;
+      color: #136443;
+    }
+    .receipt[data-status="error"] {
+      background: #fff2f2;
+      border-color: #f0c0c0;
+      color: #a82222;
+    }
+    .receipt-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 6px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #dfe7f2;
+      padding: 8px 10px;
+      text-align: left;
+    }
+    th {
+      background: #f4f7fc;
+      color: #364b68;
+    }
+    .v2-layer {
+      padding: 6px;
+      border: 1px dashed #9bb9e8;
+      border-radius: 8px;
+      background: #f2f7ff;
+      display: inline-block;
+    }
+    .login-err {
+      color: #b42626;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <small>本地仿真系统 B · 固定端口 18762 · 无真实生产数据</small>
+      <h1>工单与业务台账批量录入系统</h1>
+    </div>
+    <span id="user-badge" class="badge">已登录：浙电台账审核员</span>
+  </div>
+
+  <div class="toolbar">
+    <button type="button" id="toggle-auth-btn">模拟会话过期（登出）</button>
+    <button type="button" id="toggle-layout-btn">切换轻改版布局 (layout=v2)</button>
+    <button type="button" id="clear-ledger-btn">清空已录入台账</button>
+    <a id="goto-sys-a" class="nav-link" href="http://127.0.0.1:18761/sys_a_query.html">返回系统 A（数据查询 18761）</a>
+  </div>
+
+  <form id="login-form" class="card" data-auth-form="true" hidden>
+    <h2 style="margin:0 0 10px;font-size:15px;">系统 B 登录检查点（模拟会话失效接管）</h2>
+    <div class="form-grid">
+      <label for="login-user">员工账号
+        <input id="login-user" name="loginUser" placeholder="例如 sg_ops01" autocomplete="off">
+      </label>
+      <label for="login-pass">登录密码
+        <input id="login-pass" name="loginPass" type="password" placeholder="任意测试口令" autocomplete="off">
+      </label>
+      <div>
+        <button id="login-submit" class="primary" type="submit">登录系统 B</button>
+      </div>
+    </div>
+    <div id="login-error" class="login-err"></div>
+  </form>
+
+  <div id="ledger-panel" class="card">
+    <div class="form-grid">
+      <label id="lbl-orgName" for="orgName">供电单位
+        <input id="orgName" name="orgName" data-testid="org-input" placeholder="例如 杭州供电所">
+      </label>
+      <label id="lbl-batchCode" for="batchCode">关联客户批号
+        <input id="batchCode" name="batchCode" data-testid="batch-input" placeholder="例如 KH-202611-HZ01">
+      </label>
+      <label id="lbl-meterNo" for="meterNo">表计编号
+        <input id="meterNo" name="meterNo" data-testid="meter-input" placeholder="例如 M-2026-001">
+      </label>
+      <label id="lbl-kwh" for="kwh">申报电量
+        <input id="kwh" name="kwh" type="number" data-testid="kwh-input" placeholder="1 ~ 50000">
+      </label>
+      <label id="lbl-voltage" for="voltage">电压等级
+        <select id="voltage" name="voltage" data-testid="voltage-select">
+          <option value="10kV">10kV</option>
+          <option value="35kV">35kV</option>
+          <option value="110kV">110kV</option>
+        </select>
+      </label>
+      <label id="lbl-remark" for="remark">备注
+        <input id="remark" name="remark" placeholder="可选备注">
+      </label>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;align-items:center;">
+      <div id="submit-btn-host">
+        <button id="submit-btn" class="primary" type="button" data-testid="submit-btn">提交台账</button>
+      </div>
+      <button id="reset-btn" type="button">重置表单</button>
+    </div>
+  </div>
+
+  <div id="receipt-box" class="receipt" data-status="idle">
+    <div class="receipt-grid">
+      <span>回执状态：<strong id="receipt-status" data-status="idle">idle</strong></span>
+      <span>回执单号：<strong id="receipt-no">-</strong></span>
+      <span>失败原因：<strong id="receipt-error"></strong></span>
+    </div>
+    <div id="receipt-message">等待台账提交（校验规则：未备案所拒收；申报电量需在 1 ~ 50000 之间）。</div>
+  </div>
+
+  <table id="ledger-table">
+    <thead>
+      <tr>
+        <th>回执单号</th>
+        <th>供电单位</th>
+        <th>关联批号</th>
+        <th>表计编号</th>
+        <th>申报电量(kWh)</th>
+        <th>电压等级</th>
+        <th>状态</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td colspan="7" style="color:#7c8ba2;text-align:center;">尚无已录入台账</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+(() => {
+  const AUTH_KEY = 'sf_demo_sysb_auth';
+  const LEDGER_KEY = 'sf_demo_sysb_ledger';
+  const params = new URLSearchParams(location.search);
+  let layoutV2 = params.get('layout') === 'v2';
+
+  if (params.get('needAuth') === '1') {
+    sessionStorage.setItem(AUTH_KEY, '0');
+  } else if (sessionStorage.getItem(AUTH_KEY) === null) {
+    sessionStorage.setItem(AUTH_KEY, '1');
+  }
+
+  const loginForm = document.getElementById('login-form');
+  const ledgerPanel = document.getElementById('ledger-panel');
+  const userBadge = document.getElementById('user-badge');
+  const loginError = document.getElementById('login-error');
+  const receiptBox = document.getElementById('receipt-box');
+  const receiptStatus = document.getElementById('receipt-status');
+  const receiptNo = document.getElementById('receipt-no');
+  const receiptError = document.getElementById('receipt-error');
+  const receiptMsg = document.getElementById('receipt-message');
+  const ledgerTbody = document.querySelector('#ledger-table tbody');
+
+  function getFields() {
+    return {
+      orgEl: document.querySelector('#ledger-panel input[name="orgName"]'),
+      batchEl: document.querySelector('#ledger-panel input[name="batchCode"]'),
+      meterEl: document.querySelector('#ledger-panel input[name="meterNo"]'),
+      kwhEl: document.querySelector('#ledger-panel input[name="kwh"]'),
+      voltEl: document.querySelector('#ledger-panel select[name="voltage"]'),
+      remarkEl: document.querySelector('#ledger-panel input[name="remark"]'),
+      submitBtn: document.querySelector('#submit-btn-host button')
+    };
+  }
+
+  function loadLedger() {
+    try {
+      return JSON.parse(sessionStorage.getItem(LEDGER_KEY) || '[]');
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function renderLedger() {
+    const rows = loadLedger();
+    if (!rows.length) {
+      ledgerTbody.innerHTML = '<tr><td colspan="7" style="color:#7c8ba2;text-align:center;">尚无已录入台账</td></tr>';
+      return;
+    }
+    ledgerTbody.innerHTML = rows
+      .map(
+        (r) =>
+          `<tr><td>${r.receiptNo}</td><td>${r.orgName}</td><td>${r.batchCode || '-'}</td><td>${r.meterNo}</td><td>${r.kwh}</td><td>${r.voltage}</td><td>${r.status}</td></tr>`
+      )
+      .join('');
+  }
+
+  function renderAuthState() {
+    const authed = sessionStorage.getItem(AUTH_KEY) === '1';
+    loginForm.hidden = authed;
+    ledgerPanel.hidden = !authed;
+    userBadge.textContent = authed ? '已登录：浙电台账审核员' : '未登录 / 会话已过期';
+    userBadge.classList.toggle('logged-out', !authed);
+    document.getElementById('toggle-auth-btn').textContent = authed ? '模拟会话过期（登出）' : '恢复已登录';
+  }
+
+  function applyLayoutMode() {
+    const { orgEl, submitBtn } = getFields();
+    const lblOrg = document.getElementById('lbl-orgName');
+    const host = document.getElementById('submit-btn-host');
+    if (layoutV2) {
+      orgEl.id = 'ext-gen-9201';
+      orgEl.removeAttribute('data-testid');
+      lblOrg.setAttribute('for', 'ext-gen-9201');
+      submitBtn.id = 'ext-gen-9202';
+      submitBtn.removeAttribute('data-testid');
+      host.innerHTML = '<div class="v2-layer"></div>';
+      host.querySelector('.v2-layer').appendChild(submitBtn);
+    } else {
+      orgEl.id = 'orgName';
+      orgEl.setAttribute('data-testid', 'org-input');
+      lblOrg.setAttribute('for', 'orgName');
+      submitBtn.id = 'submit-btn';
+      submitBtn.setAttribute('data-testid', 'submit-btn');
+      host.innerHTML = '';
+      host.appendChild(submitBtn);
+    }
+  }
+
+  function setReceipt(status, no, errorText, msgText) {
+    receiptBox.dataset.status = status;
+    receiptStatus.dataset.status = status;
+    receiptStatus.textContent = status;
+    receiptNo.textContent = no || '-';
+    receiptError.textContent = errorText || '';
+    receiptMsg.textContent = msgText;
+  }
+
+  function submitLedger() {
+    const { orgEl, batchEl, meterEl, kwhEl, voltEl } = getFields();
+    const orgName = orgEl.value.trim();
+    const batchCode = batchEl.value.trim();
+    const meterNo = meterEl.value.trim();
+    const kwhVal = Number(kwhEl.value);
+    const voltage = voltEl.value;
+
+    if (!orgName || orgName === '未备案所') {
+      setReceipt('error', '-', '单位代码不存在', `提交失败：供电单位“${orgName || '(空)'}”校验不通过 — 单位代码不存在。`);
+      return;
+    }
+    if (!meterNo || meterNo.length < 4) {
+      setReceipt('error', '-', '表计编号格式非法', '提交失败：表计编号格式非法（至少 4 位）。');
+      return;
+    }
+    if (Number.isNaN(kwhVal) || kwhVal <= 0 || kwhVal > 50000) {
+      setReceipt('error', '-', '电量超限需核查', `提交失败：申报电量 ${kwhEl.value || '(空)'} 超出 [1, 50000] 区间 — 电量超限需核查。`);
+      return;
+    }
+
+    const rows = loadLedger();
+    const seq = String(rows.length + 1).padStart(3, '0');
+    const code = `GD-202611-${seq}`;
+    rows.push({
+      receiptNo: code,
+      orgName,
+      batchCode,
+      meterNo,
+      kwh: kwhVal,
+      voltage,
+      status: '已入库'
+    });
+    sessionStorage.setItem(LEDGER_KEY, JSON.stringify(rows));
+    renderLedger();
+    setReceipt('ok', code, '', `提交成功：单号 ${code}，单位：${orgName}，表计：${meterNo}，电量：${kwhVal} kWh。`);
+  }
+
+  function resetForm() {
+    const { orgEl, batchEl, meterEl, kwhEl, voltEl, remarkEl } = getFields();
+    orgEl.value = '';
+    batchEl.value = '';
+    meterEl.value = '';
+    kwhEl.value = '';
+    voltEl.value = '10kV';
+    remarkEl.value = '';
+  }
+
+  document.getElementById('submit-btn').addEventListener('click', submitLedger);
+  document.getElementById('reset-btn').addEventListener('click', resetForm);
+
+  document.getElementById('clear-ledger-btn').addEventListener('click', () => {
+    sessionStorage.removeItem(LEDGER_KEY);
+    renderLedger();
+    setReceipt('idle', '-', '', '台账已清空，等待新一轮提交。');
+  });
+
+  loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const user = document.getElementById('login-user').value.trim();
+    const pass = document.getElementById('login-pass').value;
+    if (!user || !pass) {
+      loginError.textContent = '请输入账号和密码';
+      return;
+    }
+    loginError.textContent = '';
+    sessionStorage.setItem(AUTH_KEY, '1');
+    renderAuthState();
+  });
+
+  document.getElementById('toggle-auth-btn').addEventListener('click', () => {
+    const authed = sessionStorage.getItem(AUTH_KEY) === '1';
+    sessionStorage.setItem(AUTH_KEY, authed ? '0' : '1');
+    renderAuthState();
+  });
+
+  document.getElementById('toggle-layout-btn').addEventListener('click', () => {
+    layoutV2 = !layoutV2;
+    applyLayoutMode();
+  });
+
+  renderAuthState();
+  applyLayoutMode();
+  renderLedger();
+})();
+</script>
+</body>
+</html>

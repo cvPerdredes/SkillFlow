@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "SkillFlow v0.3 · 浏览器智能操作与技能录制插件",
+  "short_name": "SkillFlow v0.3",
+  "description": "国家电网课题 #60：按需授权、轻量化操作录制、不可变审批门禁与受控复用执行。",
+  "version": "0.3.0",
+  "minimum_chrome_version": "116",
+  "permissions": ["sidePanel", "storage", "unlimitedStorage", "tabs", "scripting"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "打开 SkillFlow v0.3 面板"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  }
+}

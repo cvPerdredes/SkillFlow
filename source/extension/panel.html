@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SkillFlow v0.3</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<header>
+  <div class="eyebrow">SKILLFLOW v0.3 · MV3</div>
+  <h1>零代码技能工厂与批量执行器</h1>
+  <p>轻量化蒸馏 · 1→N CSV 批量试跑 · 确定性分布追问</p>
+  <div class="pill">Chrome 116+ 纯 MV3 · ≤284B 容错适配 · 凭据零残留</div>
+</header>
+<main>
+  <section>
+    <div class="row between">
+      <h2>00 · 模型适配（内网 ≤284B / 离线 Mock）</h2>
+      <span id="aiModeTag" class="status">Mock 离线</span>
+    </div>
+    <details id="aiConfigBox">
+      <summary class="summary-toggle">配置大模型接口（API Key 仅存会话内存）</summary>
+      <label>运行模式
+        <select id="aiMode">
+          <option value="mock">离线 Mock 演示模式（零网络依赖）</option>
+          <option value="remote">OpenAI-Compatible 内网接口（≤284B）</option>
+        </select>
+      </label>
+      <div id="remoteAiFields" hidden>
+        <label>接口 Base URL（保存时将校验协议并按需申请主机权限）
+          <input id="aiBaseUrl" placeholder="例如 http://127.0.0.1:8000/v1" autocomplete="off">
+        </label>
+        <label>模型名称
+          <input id="aiModel" value="deepseek-v4-flash" autocomplete="off">
+        </label>
+        <label>API Key（仅存 chrome.storage.session，关闭浏览器即毁）
+          <input id="aiApiKey" type="password" placeholder="可选，不落本地持久化存储" autocomplete="off">
+        </label>
+      </div>
+      <div class="row action-row">
+        <button type="button" id="saveAiConfig">保存模型设置</button>
+        <button type="button" id="clearAiKey" class="btn-secondary">清空会话 Key</button>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <div class="row between">
+      <h2>01 · 操作录制与轻量化蒸馏</h2>
+      <span id="recordingTag" class="status">未录制</span>
+    </div>
+    <label>技能名称
+      <input id="skillName" value="跨系统查询与填报" autocomplete="off">
+    </label>
+    <div class="row">
+      <button class="primary" id="start">● 开始录制</button>
+      <button id="stop" disabled>■ 结束录制</button>
+    </div>
+    <div id="siteAuthBanner" class="auth-banner" hidden>
+      <div id="siteAuthText" class="auth-banner-text">当前站点未授权，需授权后继续录制。</div>
+      <button type="button" class="primary" id="grantCurrentSite">授权当前站点并继续录制</button>
+    </div>
+    <div id="distillMetrics" class="metrics-bar" hidden></div>
+    <p class="hint">支持跨系统录制；登录表单统一折叠为 auth_checkpoint，绝不录存密码或敏感值。</p>
+    <div id="steps" class="steps"><div class="muted">尚无动作</div></div>
+    <div id="extractToolBox" class="extract-box" hidden>
+      <label style="margin-top:0;">零代码提取页面字段为跨系统变量 (extract → outputVar)
+        <div class="row" style="margin-top:4px;">
+          <input id="extractVarName" value="batchCodeVar" placeholder="英文变量名如 batchCodeVar" autocomplete="off">
+          <button type="button" id="pickExtractFieldBtn" class="btn-fixed">+ 选点提取页面字段</button>
+          <button type="button" id="cancelExtractPickBtn" class="btn-secondary btn-mini" disabled>取消</button>
+        </div>
+      </label>
+    </div>
+  </section>
+
+  <section>
+    <div class="row between">
+      <h2>02 · AI 草稿解析与技能审核</h2>
+      <button type="button" id="analyzeDraftBtn" class="btn-mini" disabled>AI 生成草稿</button>
+    </div>
+    <details id="sanitizedPreviewWrap" hidden>
+      <summary class="summary-toggle">预览外发脱敏载荷（不含密码/Token/敏感值）</summary>
+      <pre id="sanitizedPreviewJson" class="preview-code"></pre>
+    </details>
+    <div id="draftNotice" class="clarify-box" hidden></div>
+    <label>技能意图描述
+      <input id="skillIntent" placeholder="结束录制后自动生成或手动补充">
+    </label>
+    <div id="parameterEditor"><div class="muted">结束录制后生成</div></div>
+    <div class="form-two">
+      <label>结果校验选择器（可选）
+        <input id="resultSelector" placeholder="例如 #result-summary 或 #receipt-status">
+      </label>
+      <label>登录检查点策略
+        <select id="skillAuthPolicy">
+          <option value="manual_takeover">模式 A · 人工接管（推荐）</option>
+          <option value="ephemeral_prompt">模式 B · 内存临时密文填单</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-two">
+      <label>结构化采集预设（可选）
+        <select id="extractSpecPreset">
+          <option value="none">不采集明细表</option>
+          <option value="sys_a_table">系统 A 结果表格 (#result-table)</option>
+          <option value="sys_b_receipt">系统 B 提交回执 (#receipt-box)</option>
+        </select>
+      </label>
+      <label>试跑核验条数 (pilotCount)
+        <input id="pilotCountInput" type="number" value="2" min="0" max="10">
+      </label>
+    </div>
+    <label class="toggle-inline">
+      <input type="checkbox" id="enableBatchLoop"> 启用 1→N CSV 批量录入循环（生成 dataset 参数）
+    </label>
+    <div class="row action-row">
+      <button id="saveSkill" disabled>保存技能 (IR v0.3)</button>
+      <button id="downloadSkill" disabled>导出脱敏 JSON</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>03 · 自然语言匹配、CSV 批量与审批执行</h2>
+    <label>一句话唤起技能（matchSkill）
+      <div class="row">
+        <input id="nlQuery" placeholder="例如：查 B 单位">
+        <button type="button" id="matchSkillBtn" class="btn-fixed">匹配技能</button>
+      </div>
+    </label>
+    <div id="matchResultBox" class="origins-bar" hidden></div>
+
+    <label>搜索或选择已保存技能
+      <input id="skillSearchInput" placeholder="输入关键词过滤技能名称/意图..." autocomplete="off">
+      <select id="skillPicker"><option value="">请选择已保存技能</option></select>
+    </label>
+    <div id="allowedOriginsBar" class="origins-bar" hidden></div>
+    <div id="skillManageRow" class="row action-row">
+      <input type="file" id="importSkillFile" accept=".json,application/json" hidden>
+      <button type="button" id="importSkillBtn" class="btn-secondary">导入技能 JSON</button>
+      <button type="button" id="deleteSkillBtn" class="btn-secondary" disabled>删除当前技能</button>
+    </div>
+    <div id="deleteSkillConfirmCard" class="risk-card" hidden>
+      <div id="deleteSkillConfirmText" class="risk-text">确认删除该技能？</div>
+      <div class="row action-row">
+        <button type="button" id="confirmDeleteSkillBtn" class="btn-danger">确认删除</button>
+        <button type="button" id="cancelDeleteSkillBtn" class="btn-secondary">取消</button>
+      </div>
+    </div>
+    <div id="skillExportRow" class="row action-row" hidden>
+      <button type="button" id="exportSkillMd" class="btn-secondary">导出 SKILL.md</button>
+      <button type="button" id="exportMcpJson" class="btn-secondary">导出 MCP JSON</button>
+    </div>
+
+    <div id="nlArgsGroup" hidden>
+      <label>一句话补参（extractArgs）
+        <div class="row">
+          <input id="nlArgInput" placeholder="例如：上个月 / 2026-10">
+          <button type="button" id="extractArgsBtn" class="btn-fixed">解析补参</button>
+        </div>
+      </label>
+      <div id="clarifyBox" class="clarify-box" hidden></div>
+      <div class="row between" style="margin-top:6px;">
+        <span class="muted">运行参数（缺参时留空以触发追问）</span>
+        <button type="button" id="fillSampleArgsBtn" class="btn-mini">填入录制示例值</button>
+      </div>
+    </div>
+
+    <div id="runtimeParams"><div class="muted">请选择技能</div></div>
+
+    <div id="csvBatchSection" class="batch-box" hidden>
+      <div class="row between">
+        <strong style="font-size:11px;color:#1f4f94;">1→N CSV 批量数据导入</strong>
+        <span id="csvStatusBadge" class="status">未导入</span>
+      </div>
+      <label>选择 UTF-8 CSV 文件
+        <input type="file" id="csvFileInput" accept=".csv,text/csv">
+      </label>
+      <div id="csvMappingHost"></div>
+      <div id="csvErrorBox" class="risk-text" hidden></div>
+    </div>
+
+    <div class="form-two" id="runOptionsRow" hidden>
+      <label>写操作防护模式
+        <select id="writeModeSelect">
+          <option value="commit">标准确认</option>
+          <option value="pilot_then_batch">试跑 2 条再批跑</option>
+          <option value="prefill_only">预填不提交</option>
+        </select>
+      </label>
+      <label>本次鉴权策略
+        <select id="runAuthPolicySelect">
+          <option value="manual_takeover">人工接管</option>
+          <option value="ephemeral_prompt">临时密文填单</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="checkpointResumeCard" class="approval-card checkpoint-card" hidden>
+      <div class="approval-title" style="color:#7d5207;">💾 检测到未完成的批量断点</div>
+      <div id="checkpointResumeText" class="pilot-list"></div>
+      <div class="row action-row">
+        <button type="button" class="primary" id="previewResumeCheckpointBtn">预览并从断点续跑</button>
+        <button type="button" id="discardCheckpointBtn" class="btn-secondary">丢弃断点</button>
+      </div>
+    </div>
+
+    <button class="primary full" id="preview" disabled>预览执行计划</button>
+
+    <div id="approvalCard" class="approval-card" hidden>
+      <div class="row between">
+        <span class="approval-title">不可变执行计划审批</span>
+        <span id="planHashBadge" class="hash-badge"></span>
+      </div>
+      <div id="plan"></div>
+      <div class="row action-row">
+        <button class="primary" id="run">批准计划并执行</button>
+        <button type="button" id="cancelPlan" class="btn-secondary">取消</button>
+      </div>
+    </div>
+
+    <div id="pilotReviewCard" class="approval-card" hidden>
+      <div class="approval-title">🧪 试跑核验门禁（PAUSED_PILOT_REVIEW）</div>
+      <div id="pilotReviewSummary" class="pilot-list"></div>
+      <div class="row action-row">
+        <button type="button" class="primary" id="approvePilotRemaining">确认试跑无误，放行剩余条目</button>
+        <button type="button" id="cancelPilotRemaining" class="btn-secondary">中止剩余</button>
+      </div>
+    </div>
+
+    <div id="unknownWriteCard" class="risk-card" hidden>
+      <div class="risk-title">⚠ 写入结果未知（WRITE_OUTCOME_UNKNOWN · 严禁自动重试）</div>
+      <div id="unknownWriteText" class="risk-text"></div>
+      <div class="row action-row">
+        <button type="button" class="primary" id="markUnknownVerified">核对已入库，续跑剩余</button>
+        <button type="button" class="btn-danger" id="markUnknownFailed">记为失败，续跑剩余</button>
+        <button type="button" class="btn-secondary" id="cancelUnknownRun">中止</button>
+      </div>
+    </div>
+
+    <div id="riskPrompt" class="risk-card" hidden>
+      <div class="risk-title">⚠ 高危动作内联确认</div>
+      <div id="riskPromptText" class="risk-text"></div>
+      <div class="row action-row">
+        <button type="button" class="btn-danger" id="riskApprove">确认执行该步</button>
+        <button type="button" class="btn-secondary" id="riskReject">拒绝并中止</button>
+      </div>
+    </div>
+
+    <div id="rebindCard" class="rebind-card" hidden>
+      <div class="approval-title">🎯 单步元素重绑（Re-bind）</div>
+      <div id="rebindText" class="pilot-list"></div>
+      <div class="row action-row">
+        <button type="button" class="primary" id="startRebindBtn">重新指认元素</button>
+        <button type="button" id="cancelRebindBtn" class="btn-secondary" disabled>取消选点</button>
+      </div>
+    </div>
+
+    <div id="authPauseCard" class="auth-banner" hidden>
+      <div class="risk-title" style="color:#7d5207;">⏸ 检测到登录检查点（PAUSED_AUTH_REQUIRED）</div>
+      <div id="authPauseText" class="auth-banner-text"></div>
+      <div id="authModeABox" class="row action-row" hidden>
+        <button type="button" class="primary" id="resumeAuthManual">我已登录，原位继续执行</button>
+        <button type="button" id="cancelRunBtnA" class="btn-secondary">终止执行</button>
+      </div>
+      <div id="authModeBBox" hidden>
+        <label>临时账号（不落盘、不发模型）
+          <input id="ephemeralUser" placeholder="输入本次登录账号" autocomplete="off">
+        </label>
+        <label>临时密码（内存中填入即销毁）
+          <input id="ephemeralPass" type="password" placeholder="输入本次登录密码" autocomplete="off">
+        </label>
+        <div class="row action-row">
+          <button type="button" class="primary" id="submitEphemeralAuth">临时填入并继续</button>
+          <button type="button" id="switchToManualAuth" class="btn-secondary">切人工接管</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="row between">
+      <h2>04 · 执行账本与数据分布追问</h2>
+      <span id="recordsSummaryBadge" class="status">0 条明细</span>
+    </div>
+    <label>历史执行账本回看
+      <select id="runHistoryPicker"><option value="">当前运行 / 选择历史账本</option></select>
+    </label>
+    <div id="runSummary" class="muted">尚未执行</div>
+    <div id="runLogs" class="logs"></div>
+    <label>追问业务明细与分布（planQuery → reduce 确定性统计 → explainRun）
+      <input id="question" placeholder="例如 一共成功多少条、按供电单位分布和失败原因占比？">
+    </label>
+    <button id="ask">查询分析结果</button>
+    <div class="answer" id="answer">已接入确定性统计与防幻觉拒答护栏：无明细或缺少维度时将显式拒答。</div>
+    <div id="qaChartHost" class="qa-chart-host" hidden></div>
+    <div class="row action-row">
+      <button type="button" id="exportRecordsCsvBtn" class="btn-secondary" disabled>导出明细 CSV</button>
+      <button type="button" id="exportFailedCsvBtn" class="btn-secondary" disabled>导出失败清单 CSV</button>
+    </div>
+    <div class="row action-row">
+      <button type="button" id="loadFailedRowsBtn" class="primary" hidden>仅加载失败行到待跑队列</button>
+      <button type="button" id="exportEvalJson" class="btn-secondary">导出脱敏评测日志 JSON</button>
+    </div>
+  </section>
+
+  <div class="footer" id="message" role="status">就绪。请先在另一个标签页打开测试业务页面。</div>
+</main>
+<script type="module" src="panel.js"></script>
+</body>
+</html>

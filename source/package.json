@@ -1,0 +1,11 @@
+{
+  "name": "skillflow-v03",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check extension/background.js && node --check extension/content.js && node --check extension/panel.js && node --check extension/lib/sanitizer.js && node --check extension/lib/plan-builder.js && node --check extension/lib/schemas.js && node --check extension/lib/store.js && node --check extension/lib/dom-distiller.js && node --check extension/lib/driver.js && node --check extension/lib/drivers/mv3-driver.js && node --check extension/lib/ai-client.js && node --check extension/lib/skill-analyzer.js && node --check extension/lib/clarification.js && node --check extension/lib/run-controller.js && node --check extension/lib/table-extractor.js && node --check extension/lib/result-evaluator.js && node --check extension/lib/batch-runner.js && node --check extension/lib/result-qa.js && node --check extension/lib/skill-exporter.js && node --check demo_server.mjs && node --check tests/benchmark_topic60.mjs && node --check tests/phase3_unit_test.mjs && node --check tests/phase4_v031_unit_test.mjs",
+    "test": "node tests/background_unit_test.mjs && node tests/v03_contract_test.mjs && node tests/phase1_unit_test.mjs && node tests/phase2_unit_test.mjs && node tests/phase3_unit_test.mjs && node tests/phase4_v031_unit_test.mjs",
+    "bench": "node tests/benchmark_topic60.mjs"
+  }
+}
